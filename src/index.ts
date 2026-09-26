@@ -2,6 +2,8 @@ import { McpServer } from "@modelcontextprotocol/server";
 import { createMcpHandler } from "agents/mcp/server";
 import { z } from "zod";
 
+import { authorizeClient } from "./access";
+
 import {
   AtprotoError,
   createPost,
@@ -15,6 +17,9 @@ interface Env {
   ATPROTO_APP_PASSWORD?: string;
   ATPROTO_SERVICE?: string;
   MCP_API_TOKEN?: string;
+  ACCESS_TEAM_DOMAIN?: string;
+  ACCESS_AUDIENCE?: string;
+  ACCESS_ALLOWED_EMAILS?: string;
 }
 
 function credentialsFromEnv(env: Env): AtprotoCredentials {
@@ -130,24 +135,6 @@ function toolError(error: unknown) {
   };
 }
 
-function authorize(request: Request, env: Env): Response | null {
-  if (!env.MCP_API_TOKEN) {
-    return new Response("MCP_API_TOKEN is not configured", { status: 503 });
-  }
-
-  const expected = `Bearer ${env.MCP_API_TOKEN}`;
-  if (request.headers.get("authorization") !== expected) {
-    return new Response("Unauthorized", {
-      status: 401,
-      headers: {
-        "www-authenticate": 'Bearer realm="atproto-mcp"',
-      },
-    });
-  }
-
-  return null;
-}
-
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
@@ -164,8 +151,16 @@ export default {
       return new Response("Not found", { status: 404 });
     }
 
-    const unauthorized = authorize(request, env);
-    if (unauthorized) return unauthorized;
+    const identity = await authorizeClient(request, env);
+    if (!identity) {
+      return new Response("Unauthorized", {
+        status: 401,
+        headers: {
+          "www-authenticate": 'Bearer realm="atproto-mcp"',
+          "cache-control": "no-store",
+        },
+      });
+    }
 
     const handler = createMcpHandler(() => createServer(env));
     return handler(request, env, ctx);
