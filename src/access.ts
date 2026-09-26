@@ -5,7 +5,11 @@ const MAX_ACCESS_JWT_SIGNATURE_BYTES = 8 * 1024;
 const MAX_ACCESS_KID_CHARS = 256;
 const JWKS_TTL_MS = 300_000;
 
-const jwksCache = new Map<string, { keys: JsonWebKey[]; expiresAt: number }>();
+interface AccessJwk extends JsonWebKey {
+  kid?: string;
+}
+
+const jwksCache = new Map<string, { keys: AccessJwk[]; expiresAt: number }>();
 
 export interface AccessEnv {
   ACCESS_TEAM_DOMAIN?: string;
@@ -181,7 +185,7 @@ export function accessEmailAllowed(
   return allowed.includes(email.trim().toLowerCase());
 }
 
-async function getJwks(teamOrigin: string): Promise<JsonWebKey[]> {
+async function getJwks(teamOrigin: string): Promise<AccessJwk[]> {
   const cached = jwksCache.get(teamOrigin);
   if (cached && cached.expiresAt > Date.now()) return cached.keys;
 
@@ -192,7 +196,7 @@ async function getJwks(teamOrigin: string): Promise<JsonWebKey[]> {
     throw new Error(`failed to fetch Cloudflare Access keys: ${response.status}`);
   }
 
-  const body = (await response.json()) as { keys?: JsonWebKey[] };
+  const body = (await response.json()) as { keys?: AccessJwk[] };
   if (!Array.isArray(body.keys)) {
     throw new Error("invalid Cloudflare Access key response");
   }
